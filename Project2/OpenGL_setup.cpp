@@ -244,24 +244,63 @@ void drawApartment(float posX, float posZ, float width, float depth, float heigh
 }
 
 void drawTree(float posX, float posZ, float trunkRadius, float trunkHeight, float foliageRadius) {
-    // draw trunk with material properties
+    float baseY = -cubeSize; // base of the tree at ground level
+    
+    // draw the trunk of the tree
     glPushMatrix();
-    GLfloat trunkMaterial[] = {0.55f, 0.27f, 0.07f, 1.0f};
+    GLfloat trunkMaterial[] = {0.45f, 0.25f, 0.05f, 1.0f}; // brown
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, trunkMaterial);
-    glColor3f(0.55f, 0.27f, 0.07f); // Brown
-    glTranslatef(posX, -cubeSize + trunkHeight / 2.0f, posZ);
-    glScalef(trunkRadius * 2, trunkHeight, trunkRadius * 2);
-    glutSolidCube(1.0);
+    glColor3f(0.45f, 0.25f, 0.05f);
+    
+    glTranslatef(posX, baseY, posZ);
+    const int SLICES = 10;
+    const int STACKS = 8;
+    
+    GLUquadricObj* quadric = gluNewQuadric();
+    gluQuadricDrawStyle(quadric, GLU_FILL);
+    gluQuadricNormals(quadric, GLU_SMOOTH);
+    glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+    gluCylinder(quadric, trunkRadius, trunkRadius * 0.8, trunkHeight, SLICES, STACKS);
+    gluDeleteQuadric(quadric);
     glPopMatrix();
-
-    // draw foliage with material properties
-    glPushMatrix();
-    GLfloat foliageMaterial[] = {0.0f, 0.8f, 0.0f, 1.0f};
-    glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, foliageMaterial);
-    glColor3f(0.0f, 0.8f, 0.0f); // green
-    glTranslatef(posX, -cubeSize + trunkHeight + foliageRadius, posZ);
-    glutSolidSphere(foliageRadius, 16, 16);
-    glPopMatrix();
+    
+    // draw foliage as multiple overlapping spheres with slight variations for the crown of the tree
+    GLfloat foliageColors[][3] = {
+        {0.0f, 0.6f, 0.0f},  
+        {0.1f, 0.7f, 0.1f},    
+        {0.2f, 0.8f, 0.2f}   
+    };
+    
+    const int NUM_SPHERES = 5;
+    float sphereOffsets[NUM_SPHERES][3] = {
+        {0.0f, 0.0f, 0.0f},      
+        {1.0f, 0.5f, 0.2f},     
+        {-0.8f, -0.3f, 0.5f},    
+        {0.3f, 0.7f, -0.8f},     
+        {-0.5f, 0.4f, -1.0f}     
+    };
+    
+    for (int i = 0; i < NUM_SPHERES; i++) {
+        glPushMatrix();
+        int colorIndex = i % 3;
+        GLfloat foliageMaterial[] = {
+            foliageColors[colorIndex][0], 
+            foliageColors[colorIndex][1],
+            foliageColors[colorIndex][2], 
+            1.0f
+        };
+        glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, foliageMaterial);
+        glColor3fv(foliageColors[colorIndex]);
+        
+        float sphereSize = foliageRadius * (0.85f + (float)(rand() % 30) / 100.0f); 
+        glTranslatef(
+            posX + sphereOffsets[i][0] * (foliageRadius * 0.4f),
+            baseY + trunkHeight + foliageRadius * 0.8f + sphereOffsets[i][1] * (foliageRadius * 0.3f),
+            posZ + sphereOffsets[i][2] * (foliageRadius * 0.4f)
+        );
+        glutSolidSphere(sphereSize, 12, 12);
+        glPopMatrix();
+    }
 
     GLfloat defaultMaterial[] = {1.0f, 1.0f, 1.0f, 1.0f};
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, defaultMaterial);
