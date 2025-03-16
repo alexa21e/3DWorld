@@ -23,5 +23,37 @@
     <ClInclude Include="stb_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Car.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="all_lateral.jpeg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="apartment.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="grass.jpeg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="grass.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="grey.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="horizon.jpeg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="lateral.jpeg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="road.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="sky.jpeg">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>

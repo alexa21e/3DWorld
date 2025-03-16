@@ -136,7 +136,19 @@
     <ClCompile Include="OpenGL_setup.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Car.h" />
     <ClInclude Include="stb_image.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="all_lateral.jpeg" />
+    <Image Include="apartment.jpg" />
+    <Image Include="grass.jpeg" />
+    <Image Include="grass.jpg" />
+    <Image Include="grey.jpg" />
+    <Image Include="horizon.jpeg" />
+    <Image Include="lateral.jpeg" />
+    <Image Include="road.jpg" />
+    <Image Include="sky.jpeg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

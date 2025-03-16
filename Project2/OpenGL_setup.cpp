@@ -3,26 +3,52 @@
 #include <GL/freeglut.h>
 #include <iostream>
 
+#include "Car.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#define MAX_TREES 10
+#define NUM_SPHERES 5
+
+// Ppre-computed random values for tree foliage to prevent flickering
+float treeRandSizes[MAX_TREES][NUM_SPHERES];
 
 // global texture IDs and rotation angles
 GLuint grassTexture, horizonTexture, topTexture, roadTexture, apartmentTexture, apartmentTopTexture;
 float rotationX = 0.0f, rotationY = 0.0f; // to control view rotation
 float cameraX = 0.0f, cameraY = 0.0f, cameraZ = 0.0f; // to control camera position
-float cameraSpeed = 1.0f; 
+float cameraSpeed = 1.0f;
 
 // global variable to scale the environment
 float cubeSize = 60.0f;
 
 // lighting globals
 #define MAX_LIGHTS 8
-GLfloat lightPositions[MAX_LIGHTS][4]; 
-GLfloat lightColors[MAX_LIGHTS][4];    
-bool lightsEnabled = true;            
-GLuint shadowMapTexture;             
+GLfloat lightPositions[MAX_LIGHTS][4];
+GLfloat lightColors[MAX_LIGHTS][4];
+bool lightsEnabled = true;
+GLuint shadowMapTexture;
 GLuint shadowMapFBO;                   // framebuffer for shadow map
 const int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+
+// car movement flags
+bool carMovingForward = false;
+bool carMovingBackward = false;
+bool carTurningLeft = false;
+bool carTurningRight = false;
+bool carCollision = false;
+
+// global variables for camera modes
+bool thirdPersonView = false;
+float thirdPersonDistance = 15.0f;
+float thirdPersonHeight = 7.0f;
+bool freeMovementMode = false;  // toggle between realistic and free movement
+
+
+float carFreeSpeed = 0.8f;      // speed for free movement mode
+
+Car playerCar;
 
 // texture loading method
 GLuint loadTexture(const char* filename) {
@@ -58,10 +84,10 @@ void initLighting() {
 
     // warm yellow for street lamps
     for (int i = 0; i < MAX_LIGHTS; i++) {
-        lightColors[i][0] = 1.0f;   
-        lightColors[i][1] = 0.9f;   
-        lightColors[i][2] = 0.6f;   
-        lightColors[i][3] = 1.0f;  
+        lightColors[i][0] = 1.0f;
+        lightColors[i][1] = 0.9f;
+        lightColors[i][2] = 0.6f;
+        lightColors[i][3] = 1.0f;
     }
 
     // set up global ambient light
@@ -71,33 +97,33 @@ void initLighting() {
 
 void initShadowMap() {
     glGenFramebuffersEXT(1, &shadowMapFBO);
-    
+
     // generate texture for shadow map
     glGenTextures(1, &shadowMapTexture);
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
-    
+
     // configure texture parameters
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 
-                SHADOW_WIDTH, SHADOW_HEIGHT, 0, 
-                GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+        SHADOW_WIDTH, SHADOW_HEIGHT, 0,
+        GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    
+
     // attach texture to framebuffer's depth attachment
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, shadowMapFBO);
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, 
-                            GL_TEXTURE_2D, shadowMapTexture, 0);
-    
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT,
+        GL_TEXTURE_2D, shadowMapTexture, 0);
+
     // disable color buffer as we only need depth
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
-    
+
     if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
         std::cerr << "Shadow framebuffer is not complete!" << std::endl;
     }
-    
+
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 }
 
@@ -113,12 +139,19 @@ void init() {
     apartmentTopTexture = loadTexture("grey.jpg");
 
     initLighting();
-    
-	// shadow mapping is available only if this extension exists on the system
+
+    // shadow mapping is available only if this extension exists on the system
     if (glewIsSupported("GL_EXT_framebuffer_object")) {
         initShadowMap();
     } else {
         std::cout << "Shadow mapping not supported on this system." << std::endl;
+    }
+
+    // random foliage sizes for each tree
+    for (int t = 0; t < MAX_TREES; t++) {
+        for (int s = 0; s < NUM_SPHERES; s++) {
+            treeRandSizes[t][s] = 0.85f + (float)(rand() % 30) / 100.0f;
+        }
     }
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -187,7 +220,7 @@ void drawTexturedApartmentCube() {
     // set material properties for better lighting
     GLfloat buildingMaterial[] = {0.8f, 0.8f, 0.8f, 1.0f};
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, buildingMaterial);
-    
+
     glBindTexture(GL_TEXTURE_2D, apartmentTexture);
     glBegin(GL_QUADS);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(-0.5f, -0.5f, 0.5f);
@@ -245,17 +278,17 @@ void drawApartment(float posX, float posZ, float width, float depth, float heigh
 
 void drawTree(float posX, float posZ, float trunkRadius, float trunkHeight, float foliageRadius) {
     float baseY = -cubeSize; // base of the tree at ground level
-    
+
     // draw the trunk of the tree
     glPushMatrix();
     GLfloat trunkMaterial[] = {0.45f, 0.25f, 0.05f, 1.0f}; // brown
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, trunkMaterial);
     glColor3f(0.45f, 0.25f, 0.05f);
-    
+
     glTranslatef(posX, baseY, posZ);
     const int SLICES = 10;
     const int STACKS = 8;
-    
+
     GLUquadricObj* quadric = gluNewQuadric();
     gluQuadricDrawStyle(quadric, GLU_FILL);
     gluQuadricNormals(quadric, GLU_SMOOTH);
@@ -263,36 +296,40 @@ void drawTree(float posX, float posZ, float trunkRadius, float trunkHeight, floa
     gluCylinder(quadric, trunkRadius, trunkRadius * 0.8, trunkHeight, SLICES, STACKS);
     gluDeleteQuadric(quadric);
     glPopMatrix();
-    
+
     // draw foliage as multiple overlapping spheres with slight variations for the crown of the tree
     GLfloat foliageColors[][3] = {
-        {0.0f, 0.6f, 0.0f},  
-        {0.1f, 0.7f, 0.1f},    
-        {0.2f, 0.8f, 0.2f}   
+        {0.0f, 0.6f, 0.0f},
+        {0.1f, 0.7f, 0.1f},
+        {0.2f, 0.8f, 0.2f}
     };
+
     
-    const int NUM_SPHERES = 5;
+    int treeIndex = ((int)posX + (int)posZ) % MAX_TREES;
+    if (treeIndex < 0) treeIndex += MAX_TREES;
+
     float sphereOffsets[NUM_SPHERES][3] = {
-        {0.0f, 0.0f, 0.0f},      
-        {1.0f, 0.5f, 0.2f},     
-        {-0.8f, -0.3f, 0.5f},    
-        {0.3f, 0.7f, -0.8f},     
-        {-0.5f, 0.4f, -1.0f}     
+        {0.0f, 0.0f, 0.0f},
+        {1.0f, 0.5f, 0.2f},
+        {-0.8f, -0.3f, 0.5f},
+        {0.3f, 0.7f, -0.8f},
+        {-0.5f, 0.4f, -1.0f}
     };
-    
+
     for (int i = 0; i < NUM_SPHERES; i++) {
         glPushMatrix();
         int colorIndex = i % 3;
         GLfloat foliageMaterial[] = {
-            foliageColors[colorIndex][0], 
+            foliageColors[colorIndex][0],
             foliageColors[colorIndex][1],
-            foliageColors[colorIndex][2], 
+            foliageColors[colorIndex][2],
             1.0f
         };
         glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, foliageMaterial);
         glColor3fv(foliageColors[colorIndex]);
-        
-        float sphereSize = foliageRadius * (0.85f + (float)(rand() % 30) / 100.0f); 
+
+        float sphereSize = foliageRadius * treeRandSizes[treeIndex][i];
+
         glTranslatef(
             posX + sphereOffsets[i][0] * (foliageRadius * 0.4f),
             baseY + trunkHeight + foliageRadius * 0.8f + sphereOffsets[i][1] * (foliageRadius * 0.3f),
@@ -349,11 +386,11 @@ void drawStreetLamp(float posX, float posZ, float height, int lightIndex) {
     float baseY = -cubeSize + 0.5f;
     float poleRadius = 0.5f;
     float lampRadius = 1.0f;
-    
+
     // set material properties for the pole
     GLfloat poleMaterial[] = {0.2f, 0.2f, 0.2f, 1.0f};
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, poleMaterial);
-    
+
     // lamp pole
     glPushMatrix();
     glColor3f(0.2f, 0.2f, 0.2f); // dark gray
@@ -361,7 +398,7 @@ void drawStreetLamp(float posX, float posZ, float height, int lightIndex) {
     glScalef(poleRadius, height, poleRadius);
     glutSolidCube(1.0);
     glPopMatrix();
-    
+
     // lamp fixture
     glPushMatrix();
     glColor3f(0.8f, 0.8f, 0.8f); // light gray
@@ -369,25 +406,25 @@ void drawStreetLamp(float posX, float posZ, float height, int lightIndex) {
     glScalef(lampRadius*1.5f, lampRadius/2.0f, lampRadius*1.5f);
     glutSolidCube(1.0);
     glPopMatrix();
-    
+
     // set light position
     if (lightIndex < MAX_LIGHTS) {
         lightPositions[lightIndex][0] = posX;
         lightPositions[lightIndex][1] = baseY + height;
         lightPositions[lightIndex][2] = posZ;
-        lightPositions[lightIndex][3] = 1.0f; 
-        
+        lightPositions[lightIndex][3] = 1.0f;
+
         // enable with pre-configured color
         GLenum lightEnum = GL_LIGHT0 + lightIndex;
         glEnable(lightEnum);
         glLightfv(lightEnum, GL_POSITION, lightPositions[lightIndex]);
         glLightfv(lightEnum, GL_DIFFUSE, lightColors[lightIndex]);
-        
+
         // enable attenuation for more realistic lighting
         glLightf(lightEnum, GL_CONSTANT_ATTENUATION, 0.5f);
         glLightf(lightEnum, GL_LINEAR_ATTENUATION, 0.01f);
         glLightf(lightEnum, GL_QUADRATIC_ATTENUATION, 0.001f);
-        
+
         // draw a small light source indicator (when lights are enabled)
         if (lightsEnabled) {
             glPushMatrix();
@@ -399,7 +436,7 @@ void drawStreetLamp(float posX, float posZ, float height, int lightIndex) {
             glPopMatrix();
         }
     }
-    
+
     glColor3f(1.0f, 1.0f, 1.0f);
 }
 
@@ -407,23 +444,23 @@ void drawStreetLamp(float posX, float posZ, float height, int lightIndex) {
 void drawStreetLamps() {
     float lampHeight = 12.0f;
     int lampIndex = 0;
-    
+
     float northZ = cubeSize * 0.55f;  // outside the north edge
     drawStreetLamp(-cubeSize * 0.6f, northZ, lampHeight, lampIndex++);
     drawStreetLamp(-cubeSize * 0.2f, northZ, lampHeight, lampIndex++);
     drawStreetLamp(cubeSize * 0.2f, northZ, lampHeight, lampIndex++);
     drawStreetLamp(cubeSize * 0.6f, northZ, lampHeight, lampIndex++);
-    
+
     float southZ = -cubeSize * 0.55f;  // outside the south edge
     drawStreetLamp(-cubeSize * 0.6f, southZ, lampHeight, lampIndex++);
     drawStreetLamp(cubeSize * 0.6f, southZ, lampHeight, lampIndex++);
-    
+
     float westX = -cubeSize * 0.85f; // outside the west edge
     drawStreetLamp(westX, 0.0f, lampHeight, lampIndex++);
 
     float eastX = cubeSize * 0.85f;  // outside the east edge
     drawStreetLamp(eastX, 0.0f, lampHeight, lampIndex++);
-    
+
     for (int i = lampIndex; i < MAX_LIGHTS; i++) {
         glDisable(GL_LIGHT0 + i);
     }
@@ -444,21 +481,187 @@ void drawStaticObjects() {
     drawTree(20.0f, -55.0f, 2.0f, 10.0f, 5.0f);  // bottom side 
 }
 
+void drawCar() {
+    glPushMatrix();
+
+    // oosition and rotation
+    glTranslatef(playerCar.posX, playerCar.posY, playerCar.posZ);
+    glRotatef(playerCar.rotationY, 0.0f, 1.0f, 0.0f);
+
+    GLfloat carBodyMaterial[] = { 0.1f, 0.3f, 0.7f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, carBodyMaterial);
+    GLfloat carSpecular[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_SPECULAR, carSpecular);
+    glMaterialf(GL_FRONT, GL_SHININESS, 80.0f);
+
+    float carWidth = playerCar.width;
+    float carHeight = playerCar.height;
+    float carLength = playerCar.length;
+
+    // main body - lower part
+    glPushMatrix();
+    glScalef(carWidth * 0.9f, carHeight * 0.4f, carLength * 0.9f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+
+    // top cabin - with a slope
+    glPushMatrix();
+    glTranslatef(0.0f, carHeight * 0.3f, -carLength * 0.05f);
+
+    // create a more aerodynamic cabin shape
+    glBegin(GL_QUADS);
+    // left side
+    glVertex3f(-carWidth * 0.4f, 0.0f, carLength * 0.3f);
+    glVertex3f(-carWidth * 0.4f, 0.0f, -carLength * 0.2f);
+    glVertex3f(-carWidth * 0.4f, carHeight * 0.3f, -carLength * 0.25f);
+    glVertex3f(-carWidth * 0.4f, carHeight * 0.3f, carLength * 0.2f);
+
+    // right side
+    glVertex3f(carWidth * 0.4f, 0.0f, carLength * 0.3f);
+    glVertex3f(carWidth * 0.4f, 0.0f, -carLength * 0.2f);
+    glVertex3f(carWidth * 0.4f, carHeight * 0.3f, -carLength * 0.25f);
+    glVertex3f(carWidth * 0.4f, carHeight * 0.3f, carLength * 0.2f);
+
+    // front windshield
+    glVertex3f(-carWidth * 0.4f, 0.0f, carLength * 0.3f);
+    glVertex3f(carWidth * 0.4f, 0.0f, carLength * 0.3f);
+    glVertex3f(carWidth * 0.4f, carHeight * 0.3f, carLength * 0.2f);
+    glVertex3f(-carWidth * 0.4f, carHeight * 0.3f, carLength * 0.2f);
+
+    // rear windshield
+    glVertex3f(-carWidth * 0.4f, 0.0f, -carLength * 0.2f);
+    glVertex3f(carWidth * 0.4f, 0.0f, -carLength * 0.2f);
+    glVertex3f(carWidth * 0.4f, carHeight * 0.3f, -carLength * 0.25f);
+    glVertex3f(-carWidth * 0.4f, carHeight * 0.3f, -carLength * 0.25f);
+
+    // roof
+    glVertex3f(-carWidth * 0.4f, carHeight * 0.3f, carLength * 0.2f);
+    glVertex3f(carWidth * 0.4f, carHeight * 0.3f, carLength * 0.2f);
+    glVertex3f(carWidth * 0.4f, carHeight * 0.3f, -carLength * 0.25f);
+    glVertex3f(-carWidth * 0.4f, carHeight * 0.3f, -carLength * 0.25f);
+    glEnd();
+    glPopMatrix();
+
+    // front bumper
+    glPushMatrix();
+    glTranslatef(0.0f, -carHeight * 0.1f, carLength * 0.45f);
+    glScalef(carWidth * 0.8f, carHeight * 0.2f, carLength * 0.1f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+
+    // rear bumper
+    glPushMatrix();
+    glTranslatef(0.0f, -carHeight * 0.1f, -carLength * 0.45f);
+    glScalef(carWidth * 0.8f, carHeight * 0.2f, carLength * 0.1f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+
+    // windows
+    GLfloat windowMaterial[] = { 0.05f, 0.05f, 0.05f, 0.7f };
+    glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, windowMaterial);
+    glMaterialfv(GL_FRONT, GL_SPECULAR, carSpecular);
+    glMaterialf(GL_FRONT, GL_SHININESS, 120.0f);
+
+    // side windows
+    glPushMatrix();
+    glTranslatef(-carWidth * 0.45f, carHeight * 0.1f, 0.0f);
+    glScalef(0.05f, carHeight * 0.2f, carLength * 0.5f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(carWidth * 0.45f, carHeight * 0.1f, 0.0f);
+    glScalef(0.05f, carHeight * 0.2f, carLength * 0.5f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+
+    // wheels
+    GLfloat wheelMaterial[] = { 0.1f, 0.1f, 0.1f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, wheelMaterial);
+    GLfloat wheelSpecular[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_SPECULAR, wheelSpecular);
+    glMaterialf(GL_FRONT, GL_SHININESS, 10.0f);
+
+    // draw the 4 wheels
+    float wheelRadius = carHeight * 0.3f;
+    float wheelWidth = carWidth * 0.15f;
+
+    GLUquadricObj* wheelObj = gluNewQuadric();
+    gluQuadricDrawStyle(wheelObj, GLU_FILL);
+    gluQuadricNormals(wheelObj, GLU_SMOOTH);
+
+    // front left wheel
+    glPushMatrix();
+    glTranslatef(-carWidth / 2.0f - wheelWidth / 2.0f, -carHeight / 4.0f, carLength / 3.0f);
+    glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    gluCylinder(wheelObj, wheelRadius, wheelRadius, wheelWidth, 16, 1);
+    glTranslatef(0.0f, 0.0f, wheelWidth);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    glPopMatrix();
+
+    // front right wheel
+    glPushMatrix();
+    glTranslatef(carWidth / 2.0f + wheelWidth / 2.0f, -carHeight / 4.0f, carLength / 3.0f);
+    glRotatef(-90.0f, 0.0f, 1.0f, 0.0f);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    gluCylinder(wheelObj, wheelRadius, wheelRadius, wheelWidth, 16, 1);
+    glTranslatef(0.0f, 0.0f, wheelWidth);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    glPopMatrix();
+
+    // rear left wheel
+    glPushMatrix();
+    glTranslatef(-carWidth / 2.0f - wheelWidth / 2.0f, -carHeight / 4.0f, -carLength / 3.0f);
+    glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    gluCylinder(wheelObj, wheelRadius, wheelRadius, wheelWidth, 16, 1);
+    glTranslatef(0.0f, 0.0f, wheelWidth);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    glPopMatrix();
+
+    // rear right wheel
+    glPushMatrix();
+    glTranslatef(carWidth / 2.0f + wheelWidth / 2.0f, -carHeight / 4.0f, -carLength / 3.0f);
+    glRotatef(-90.0f, 0.0f, 1.0f, 0.0f);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    gluCylinder(wheelObj, wheelRadius, wheelRadius, wheelWidth, 16, 1);
+    glTranslatef(0.0f, 0.0f, wheelWidth);
+    gluDisk(wheelObj, 0, wheelRadius, 16, 3);
+    glPopMatrix();
+
+    gluDeleteQuadric(wheelObj);
+
+    glPopMatrix();
+}
+
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
 
-    float angleY = rotationY * 3.14159f / 180.0f; // horizontal rotation (y-axis)
-    float angleX = rotationX * 3.14159f / 180.0f; // vertical rotation (x-axis)
-    
-    float lookX = sin(angleY) * cos(angleX);
-    float lookY = sin(angleX);
-    float lookZ = -cos(angleY) * cos(angleX);
+    if (thirdPersonView) {
+        float angleRad = playerCar.rotationY * 3.14159f / 180.0f;
+        float camX = playerCar.posX - sin(angleRad) * thirdPersonDistance;
+        float camY = playerCar.posY + thirdPersonHeight;
+        float camZ = playerCar.posZ + cos(angleRad) * thirdPersonDistance;
 
-    gluLookAt(cameraX, cameraY, cameraZ,
-              cameraX + lookX, cameraY + lookY, cameraZ + lookZ,
-              0.0f, 1.0f, 0.0f);
-    
+        gluLookAt(camX, camY, camZ,
+            playerCar.posX, playerCar.posY + 2.0f, playerCar.posZ,
+            0.0f, 1.0f, 0.0f);
+    }
+    else {
+        float angleX = rotationX * 3.14159f / 180.0f;
+        float angleY = rotationY * 3.14159f / 180.0f;
+
+        float lookX = sin(angleY) * cos(angleX);
+        float lookY = sin(angleX);
+        float lookZ = -cos(angleY) * cos(angleX);
+
+        gluLookAt(cameraX, cameraY, cameraZ,
+            cameraX + lookX, cameraY + lookY, cameraZ + lookZ,
+            0.0f, 1.0f, 0.0f);
+    }
+
     if (lightsEnabled) {
         glEnable(GL_LIGHTING);
     } else {
@@ -469,8 +672,175 @@ void display() {
     drawStreetCircuit();
     drawStaticObjects();
     drawStreetLamps();
+    drawCar();
 
     glutSwapBuffers();
+}
+
+bool checkAABBCollision(
+    float x1, float y1, float z1, float w1, float h1, float l1,
+    float x2, float y2, float z2, float w2, float h2, float l2
+) {
+    float angle = playerCar.rotationY * 3.14159f / 180.0f;
+    float cosAngle = cos(angle);
+    float sinAngle = sin(angle);
+
+    float rotatedWidth = fabs(cosAngle * w1) + fabs(sinAngle * l1);
+    float rotatedLength = fabs(sinAngle * w1) + fabs(cosAngle * l1);
+
+    // check overlap in all three dimensions
+    return (
+        fabs(x1 - x2) < (rotatedWidth / 2.0f + w2 / 2.0f) &&
+        fabs(y1 - y2) < (h1 / 2.0f + h2 / 2.0f) &&
+        fabs(z1 - z2) < (rotatedLength / 2.0f + l2 / 2.0f)
+        );
+}
+
+bool checkCarCollisions() {
+    bool collision = false;
+    float carX = playerCar.posX;
+    float carY = playerCar.posY;
+    float carZ = playerCar.posZ;
+    float carW = playerCar.width;
+    float carH = playerCar.height;
+    float carL = playerCar.length;
+
+    // collision with apartment buildings
+    float apartmentPositions[][3] = {
+        {-50.0f, -cubeSize + 20.0f, 40.0f},   // top left
+        {50.0f, -cubeSize + 20.0f, 40.0f},    // top right
+        {-50.0f, -cubeSize + 20.0f, -40.0f},  // bottom left
+        {50.0f, -cubeSize + 20.0f, -40.0f},   // bottom right
+        {0.0f, -cubeSize + 20.0f, 40.0f},     // top center
+        {0.0f, -cubeSize + 20.0f, -40.0f}     // bottom center
+    };
+
+    for (int i = 0; i < 6; i++) {
+        if (checkAABBCollision(
+            carX, carY, carZ, carW, carH, carL,
+            apartmentPositions[i][0], apartmentPositions[i][1], apartmentPositions[i][2], 12.0f, 40.0f, 12.0f
+        )) {
+            collision = true;
+            break;
+        }
+    }
+
+    // collision with trees
+    float treePositions[][3] = {
+        {-55.0f, -cubeSize + 5.0f, 0.0f},
+        {55.0f, -cubeSize + 5.0f, 0.0f},
+        {20.0f, -cubeSize + 5.0f, 55.0f},
+        {20.0f, -cubeSize + 5.0f, -55.0f}
+    };
+
+    for (int i = 0; i < 4; i++) {
+        if (checkAABBCollision(
+            carX, carY, carZ, carW, carH, carL,
+            treePositions[i][0], treePositions[i][1], treePositions[i][2], 10.0f, 15.0f, 10.0f
+        )) {
+            collision = true;
+            break;
+        }
+    }
+
+    // collision with street lamps
+    float lampPositions[][3] = {
+        {-cubeSize * 0.6f, -cubeSize + 6.0f, cubeSize * 0.55f},
+        {-cubeSize * 0.2f, -cubeSize + 6.0f, cubeSize * 0.55f},
+        {cubeSize * 0.2f, -cubeSize + 6.0f, cubeSize * 0.55f},
+        {cubeSize * 0.6f, -cubeSize + 6.0f, cubeSize * 0.55f},
+        {-cubeSize * 0.6f, -cubeSize + 6.0f, -cubeSize * 0.55f},
+        {cubeSize * 0.6f, -cubeSize + 6.0f, -cubeSize * 0.55f},
+        {-cubeSize * 0.85f, -cubeSize + 6.0f, 0.0f},
+        {cubeSize * 0.85f, -cubeSize + 6.0f, 0.0f}
+    };
+
+    for (int i = 0; i < 8; i++) {
+        if (checkAABBCollision(
+            carX, carY, carZ, carW, carH, carL,
+            lampPositions[i][0], lampPositions[i][1], lampPositions[i][2], 1.0f, 12.0f, 1.0f
+        )) {
+            collision = true;
+            break;
+        }
+    }
+
+    // boundaries to keep car inside the cube
+    if (carX - carW / 2.0f < -cubeSize || carX + carW / 2.0f > cubeSize ||
+        carZ - carL / 2.0f < -cubeSize || carZ + carL / 2.0f > cubeSize) {
+        collision = true;
+    }
+
+    return collision;
+}
+
+
+void updateCar() {
+    // store old position to revert back in case of collision
+    float oldX = playerCar.posX;
+    float oldZ = playerCar.posZ;
+    
+    if (!freeMovementMode) {
+        float angleRad = playerCar.rotationY * 3.14159f / 180.0f;
+        float dirX = sin(angleRad);
+        float dirZ = -cos(angleRad);
+        
+        if (carMovingForward && !carMovingBackward) {
+            playerCar.speed += playerCar.acceleration;
+            if (playerCar.speed > playerCar.maxSpeed)
+                playerCar.speed = playerCar.maxSpeed;
+        }
+        else if (carMovingBackward && !carMovingForward) {
+            if (playerCar.speed > 0) {
+                playerCar.speed -= playerCar.deceleration;
+            }
+            else {
+                playerCar.speed -= playerCar.acceleration;
+                if (playerCar.speed < -playerCar.maxSpeed * 0.6f)
+                    playerCar.speed = -playerCar.maxSpeed * 0.6f;
+            }
+        }
+        else {
+            if (playerCar.speed > 0) {
+                playerCar.speed -= playerCar.friction;
+                if (playerCar.speed < 0) playerCar.speed = 0;
+            }
+            else if (playerCar.speed < 0) {
+                playerCar.speed += playerCar.friction;
+                if (playerCar.speed > 0) playerCar.speed = 0;
+            }
+        }
+        
+        if (fabs(playerCar.speed) > 0.01f) {
+            float turnMultiplier = fmin(fabs(playerCar.speed) * playerCar.turnFactor, 1.0f);
+            
+            if (carTurningLeft)
+                playerCar.rotationY += playerCar.turnSpeed * turnMultiplier * (playerCar.speed > 0 ? 1 : -1);
+            if (carTurningRight)
+                playerCar.rotationY -= playerCar.turnSpeed * turnMultiplier * (playerCar.speed > 0 ? 1 : -1);
+        }
+        
+        while (playerCar.rotationY >= 360.0f) playerCar.rotationY -= 360.0f;
+        while (playerCar.rotationY < 0.0f) playerCar.rotationY += 360.0f;
+        
+        playerCar.posX += dirX * playerCar.speed;
+        playerCar.posZ += dirZ * playerCar.speed;
+    }
+    
+    carCollision = checkCarCollisions();
+    if (carCollision) {
+        playerCar.posX = oldX;
+        playerCar.posZ = oldZ;
+        
+        if (!freeMovementMode) {
+            playerCar.speed = -playerCar.speed * 0.3f;
+        }
+    }
+}
+
+void idle() {
+    updateCar();
+    glutPostRedisplay();
 }
 
 void reshape(int w, int h) {
@@ -494,10 +864,16 @@ void specialKeys(int key, int x, int y) {
 }
 
 void keyboard(unsigned char key, int x, int y) {
-    float angleY = rotationY * 3.14159f / 180.0f; // radians conversion
+    float angleY = rotationY * 3.14159f / 180.0f; // camera angle in radians
+    float carAngleRad = playerCar.rotationY * 3.14159f / 180.0f; // car rotation in radians
+    
+    // store old car position to revert back in case of collision
+    float oldCarX = playerCar.posX;
+    float oldCarZ = playerCar.posZ;
+    float oldCarY = playerCar.posY;
     
     switch (key) {
-        case 'w': 
+        case 'w':
             cameraX += cameraSpeed * sin(angleY);
             cameraZ -= cameraSpeed * cos(angleY);
             break;
@@ -505,30 +881,83 @@ void keyboard(unsigned char key, int x, int y) {
             cameraX -= cameraSpeed * sin(angleY);
             cameraZ += cameraSpeed * cos(angleY);
             break;
-        case 'a': 
+        case 'a':
             cameraX -= cameraSpeed * cos(angleY);
             cameraZ -= cameraSpeed * sin(angleY);
             break;
-        case 'd': 
+        case 'd':
             cameraX += cameraSpeed * cos(angleY);
             cameraZ += cameraSpeed * sin(angleY);
             break;
-        case ' ': 
+        case ' ':
             cameraY += cameraSpeed;
             break;
-        case 'c': 
+        case 'c':
             cameraY -= cameraSpeed;
             break;
-        case 'r': 
+        
+        case 'i':  
+            playerCar.posX += carFreeSpeed * sin(carAngleRad);
+            playerCar.posZ -= carFreeSpeed * cos(carAngleRad);
+            break;
+        case 'k':  
+            playerCar.posX -= carFreeSpeed * sin(carAngleRad);
+            playerCar.posZ += carFreeSpeed * cos(carAngleRad);
+            break;
+        case 'u':  
+            playerCar.posX -= carFreeSpeed * cos(carAngleRad);
+            playerCar.posZ -= carFreeSpeed * sin(carAngleRad);
+            break;
+        case 'o': 
+            playerCar.posX += carFreeSpeed * cos(carAngleRad);
+            playerCar.posZ += carFreeSpeed * sin(carAngleRad);
+            break;
+        case 'j': 
+            playerCar.rotationY += 5.0f;
+            while (playerCar.rotationY >= 360.0f) playerCar.rotationY -= 360.0f;
+            break;
+        case 'l': 
+            playerCar.rotationY -= 5.0f;
+            while (playerCar.rotationY < 0.0f) playerCar.rotationY += 360.0f;
+            break;
+        case 'r':  
             cameraX = cameraY = cameraZ = 0.0f;
             rotationX = rotationY = 0.0f;
             break;
-        case 'l':
+        case 'm':  
+            playerCar.posX = 0.0f;
+            playerCar.posY = -cubeSize + 1.0f;
+            playerCar.posZ = 0.0f;
+            playerCar.rotationY = 0.0f;
+            break;
+        case 'g':  
             lightsEnabled = !lightsEnabled;
+            break;
+        case 't': 
+            thirdPersonView = !thirdPersonView;
             break;
     }
     
-    // check to keep the camera within the cube
+    if (key == 'i' || key == 'k' || key == 'u' || key == 'o') {
+        if (checkCarCollisions()) {
+            // revert to old position on collision
+            playerCar.posX = oldCarX;
+            playerCar.posY = oldCarY;
+            playerCar.posZ = oldCarZ;
+            carCollision = true; 
+        } else {
+            carCollision = false;
+        }
+    }
+    
+    float carBoundary = cubeSize * 0.9f;
+    if (playerCar.posX > carBoundary) playerCar.posX = carBoundary;
+    if (playerCar.posX < -carBoundary) playerCar.posX = -carBoundary;
+    if (playerCar.posY > carBoundary) playerCar.posY = carBoundary;
+    if (playerCar.posY < -carBoundary) playerCar.posY = -carBoundary;
+    if (playerCar.posZ > carBoundary) playerCar.posZ = carBoundary;
+    if (playerCar.posZ < -carBoundary) playerCar.posZ = -carBoundary;
+    
     float boundary = cubeSize * 0.9f;
     if (cameraX > boundary) cameraX = boundary;
     if (cameraX < -boundary) cameraX = -boundary;
@@ -536,8 +965,25 @@ void keyboard(unsigned char key, int x, int y) {
     if (cameraY < -boundary) cameraY = -boundary;
     if (cameraZ > boundary) cameraZ = boundary;
     if (cameraZ < -boundary) cameraZ = -boundary;
-    
+
     glutPostRedisplay();
+}
+
+// handle key release events
+void keyboardUp(unsigned char key, int x, int y) {
+    if (!freeMovementMode) {
+        switch (key) {
+            case 'u':
+                carMovingBackward = false;
+                break;
+            case 'h':
+                carTurningLeft = false;
+                break;
+            case 'j':
+                carTurningRight = false;
+                break;
+        }
+    }
 }
 
 int main(int argc, char** argv) {
@@ -557,6 +1003,8 @@ int main(int argc, char** argv) {
     glutReshapeFunc(reshape);
     glutSpecialFunc(specialKeys);
     glutKeyboardFunc(keyboard);
+    glutKeyboardUpFunc(keyboardUp);  
+    glutIdleFunc(idle);              
     glutMainLoop();
     return 0;
 }
