@@ -8,7 +8,9 @@
 
 // Global texture IDs and rotation angles
 GLuint grassTexture, horizonTexture, topTexture, roadTexture, apartmentTexture, apartmentTopTexture;
-float rotationX = 0.0f, rotationY = 0.0f; // to control view orientation
+float rotationX = 0.0f, rotationY = 0.0f; // to control view rotation
+float cameraX = 0.0f, cameraY = 0.0f, cameraZ = 0.0f; // to control camera position
+float cameraSpeed = 1.0f; 
 
 // Global variable to scale the environment
 float cubeSize = 60.0f;
@@ -245,14 +247,16 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
 
-    // Place the camera at the center (inside the cube)
-    gluLookAt(0.0, 0.0, 0.0,
-        0.0, 0.0, -1.0,
-        0.0, 1.0, 0.0);
+    float angleY = rotationY * 3.14159f / 180.0f; // horizontal rotation (y-axis)
+    float angleX = rotationX * 3.14159f / 180.0f; // vertical rotation (x-axis)
+    
+    float lookX = sin(angleY) * cos(angleX);
+    float lookY = sin(angleX);
+    float lookZ = -cos(angleY) * cos(angleX);
 
-    // Apply rotations based on arrow key input
-    glRotatef(rotationX, 1.0f, 0.0f, 0.0f);
-    glRotatef(rotationY, 0.0f, 1.0f, 0.0f);
+    gluLookAt(cameraX, cameraY, cameraZ,
+              cameraX + lookX, cameraY + lookY, cameraZ + lookZ,
+              0.0f, 1.0f, 0.0f);
 
     drawCube();
     drawStreetCircuit();
@@ -281,6 +285,50 @@ void specialKeys(int key, int x, int y) {
     glutPostRedisplay();
 }
 
+void keyboard(unsigned char key, int x, int y) {
+    float angleY = rotationY * 3.14159f / 180.0f; // radians conversion
+    
+    switch (key) {
+        case 'w': 
+            cameraX += cameraSpeed * sin(angleY);
+            cameraZ -= cameraSpeed * cos(angleY);
+            break;
+        case 's':
+            cameraX -= cameraSpeed * sin(angleY);
+            cameraZ += cameraSpeed * cos(angleY);
+            break;
+        case 'a': 
+            cameraX -= cameraSpeed * cos(angleY);
+            cameraZ -= cameraSpeed * sin(angleY);
+            break;
+        case 'd': 
+            cameraX += cameraSpeed * cos(angleY);
+            cameraZ += cameraSpeed * sin(angleY);
+            break;
+        case ' ': 
+            cameraY += cameraSpeed;
+            break;
+        case 'c': 
+            cameraY -= cameraSpeed;
+            break;
+        case 'r': 
+            cameraX = cameraY = cameraZ = 0.0f;
+            rotationX = rotationY = 0.0f;
+            break;
+    }
+    
+    // check to keep the camera within the cube
+    float boundary = cubeSize * 0.9f;
+    if (cameraX > boundary) cameraX = boundary;
+    if (cameraX < -boundary) cameraX = -boundary;
+    if (cameraY > boundary) cameraY = boundary;
+    if (cameraY < -boundary) cameraY = -boundary;
+    if (cameraZ > boundary) cameraZ = boundary;
+    if (cameraZ < -boundary) cameraZ = -boundary;
+    
+    glutPostRedisplay();
+}
+
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
@@ -297,6 +345,7 @@ int main(int argc, char** argv) {
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutSpecialFunc(specialKeys);
+    glutKeyboardFunc(keyboard);
     glutMainLoop();
     return 0;
 }
