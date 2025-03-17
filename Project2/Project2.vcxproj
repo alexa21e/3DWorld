@@ -136,11 +136,13 @@
     <ClCompile Include="Car.cpp" />
     <ClCompile Include="Drone.cpp" />
     <ClCompile Include="OpenGL_setup.cpp" />
+    <ClCompile Include="TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Car.h" />
     <ClInclude Include="Drone.h" />
     <ClInclude Include="stb_image.h" />
+    <ClInclude Include="TextureManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="all_lateral.jpeg" />

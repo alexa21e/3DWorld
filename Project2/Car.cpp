@@ -2,7 +2,7 @@
 #include <cmath>
 
 Car::Car(float worldSize) {
-    // Initialize car position at ground level
+    // initialize car position at ground level
     posY = -worldSize + 1.0f;
 }
 

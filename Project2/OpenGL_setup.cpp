@@ -5,6 +5,7 @@
 
 #include "Car.h"
 #include "Drone.h"
+#include "TextureManager.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -14,6 +15,8 @@
 
 // pre-computed random values for tree foliage to prevent flickering
 float treeRandSizes[MAX_TREES][NUM_SPHERES];
+
+TextureManager textureManager;
 
 // global texture IDs and rotation angles
 GLuint grassTexture, horizonTexture, topTexture, roadTexture, apartmentTexture, apartmentTopTexture;
@@ -51,32 +54,6 @@ float carFreeSpeed = 0.8f; // speed for free movement mode
 
 Drone* drones[2];
 float lastTime = 0; // timing for drones' animations
-
-// texture loading method
-GLuint loadTexture(const char* filename) {
-    int width, height, nrChannels;
-    unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
-    if (!data) {
-        std::cerr << "Failed to load texture: " << filename << "\n";
-        std::cerr << "stb_image error: " << stbi_failure_reason() << "\n";
-        return 0;
-    }
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-
-    GLenum format = (nrChannels == 3) ? GL_RGB : GL_RGBA;
-    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    stbi_image_free(data);
-    return textureID;
-}
 
 void initLighting() {
     glEnable(GL_LIGHTING);
@@ -133,12 +110,12 @@ void init() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
 
-    grassTexture = loadTexture("grass.jpg");
-    horizonTexture = loadTexture("lateral.jpeg");
-    topTexture = loadTexture("sky.jpeg");
-    roadTexture = loadTexture("road.jpg");
-    apartmentTexture = loadTexture("apartment.jpg");
-    apartmentTopTexture = loadTexture("grey.jpg");
+    textureManager.loadTexture("grass.jpg", "grass");
+    textureManager.loadTexture("lateral.jpeg", "horizon");
+    textureManager.loadTexture("sky.jpeg", "sky");
+    textureManager.loadTexture("road.jpg", "road");
+    textureManager.loadTexture("apartment.jpg", "apartment");
+    textureManager.loadTexture("grey.jpg", "apartmentTop");
 
     initLighting();
 
@@ -166,12 +143,11 @@ void init() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 }
 
-// draw world method
-void drawCube() {
+void drawWorld() {
     glDisable(GL_CULL_FACE); // ensure interior faces are visible
 
     // floor
-    glBindTexture(GL_TEXTURE_2D, grassTexture);
+    textureManager.bindTexture("grass");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-cubeSize, -cubeSize, -cubeSize);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(cubeSize, -cubeSize, -cubeSize);
@@ -180,7 +156,7 @@ void drawCube() {
     glEnd();
 
     // ceiling
-    glBindTexture(GL_TEXTURE_2D, topTexture);
+    textureManager.bindTexture("sky");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-cubeSize, cubeSize, cubeSize);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(cubeSize, cubeSize, cubeSize);
@@ -189,7 +165,7 @@ void drawCube() {
     glEnd();
 
     // front face (z = cubeSize)
-    glBindTexture(GL_TEXTURE_2D, horizonTexture);
+    textureManager.bindTexture("horizon");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(cubeSize, -cubeSize, cubeSize);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(-cubeSize, -cubeSize, cubeSize);
@@ -198,7 +174,7 @@ void drawCube() {
     glEnd();
 
     // right face (x = cubeSize)
-    glBindTexture(GL_TEXTURE_2D, horizonTexture);
+    textureManager.bindTexture("horizon");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(cubeSize, -cubeSize, -cubeSize);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(cubeSize, -cubeSize, cubeSize);
@@ -207,7 +183,7 @@ void drawCube() {
     glEnd();
 
     // back face (z = -cubeSize)
-    glBindTexture(GL_TEXTURE_2D, horizonTexture);
+    textureManager.bindTexture("horizon");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(-cubeSize, -cubeSize, -cubeSize);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(cubeSize, -cubeSize, -cubeSize);
@@ -216,7 +192,7 @@ void drawCube() {
     glEnd();
 
     // left face (x = -cubeSize)
-    glBindTexture(GL_TEXTURE_2D, horizonTexture);
+    textureManager.bindTexture("horizon");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(-cubeSize, -cubeSize, cubeSize);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(-cubeSize, -cubeSize, -cubeSize);
@@ -230,7 +206,7 @@ void drawTexturedApartmentCube() {
     GLfloat buildingMaterial[] = {0.8f, 0.8f, 0.8f, 1.0f};
     glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, buildingMaterial);
 
-    glBindTexture(GL_TEXTURE_2D, apartmentTexture);
+    textureManager.bindTexture("apartment");
     glBegin(GL_QUADS);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(-0.5f, -0.5f, 0.5f);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(0.5f, -0.5f, 0.5f);
@@ -259,7 +235,7 @@ void drawTexturedApartmentCube() {
     glTexCoord2f(0.0f, 0.0f); glVertex3f(0.5f, 0.5f, -0.5f);
     glEnd();
 
-    glBindTexture(GL_TEXTURE_2D, apartmentTopTexture);
+    textureManager.bindTexture("apartmentTop");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-0.5f, 0.5f, 0.5f);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(0.5f, 0.5f, 0.5f);
@@ -267,7 +243,7 @@ void drawTexturedApartmentCube() {
     glTexCoord2f(0.0f, 1.0f); glVertex3f(-0.5f, 0.5f, -0.5f);
     glEnd();
 
-    glBindTexture(GL_TEXTURE_2D, apartmentTexture);
+    textureManager.bindTexture("apartmentTop");
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-0.5f, -0.5f, 0.5f);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(0.5f, -0.5f, 0.5f);
@@ -355,7 +331,7 @@ void drawTree(float posX, float posZ, float trunkRadius, float trunkHeight, floa
 
 // draw the street circuit on the floor as a rectangular ring road
 void drawStreetCircuit() {
-    glBindTexture(GL_TEXTURE_2D, roadTexture);
+    textureManager.bindTexture("road");
     float y = -cubeSize + 0.5f; // slightly above the floor level
 
     // north side of road
@@ -523,7 +499,7 @@ void display() {
         glDisable(GL_LIGHTING);
     }
 
-    drawCube();
+    drawWorld();
     drawStreetCircuit();
     drawStaticObjects();
     drawStreetLamps();
