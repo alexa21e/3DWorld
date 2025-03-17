@@ -133,10 +133,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Drone.cpp" />
     <ClCompile Include="OpenGL_setup.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Car.h" />
+    <ClInclude Include="Drone.h" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <ItemGroup>

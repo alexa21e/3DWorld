@@ -5,13 +5,15 @@
 
 #include "Car.h"
 
+#include "Drone.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define MAX_TREES 10
 #define NUM_SPHERES 5
 
-// Ppre-computed random values for tree foliage to prevent flickering
+// pre-computed random values for tree foliage to prevent flickering
 float treeRandSizes[MAX_TREES][NUM_SPHERES];
 
 // global texture IDs and rotation angles
@@ -45,10 +47,11 @@ float thirdPersonDistance = 15.0f;
 float thirdPersonHeight = 7.0f;
 bool freeMovementMode = false;  // toggle between realistic and free movement
 
-
-float carFreeSpeed = 0.8f;      // speed for free movement mode
-
 Car playerCar;
+float carFreeSpeed = 0.8f; // speed for free movement mode
+
+Drone* drones[2];
+float lastTime = 0; // timing for drones' animations
 
 // texture loading method
 GLuint loadTexture(const char* filename) {
@@ -153,6 +156,11 @@ void init() {
             treeRandSizes[t][s] = 0.85f + (float)(rand() % 30) / 100.0f;
         }
     }
+
+    drones[0] = new Drone(0.0f, 0.0f, 0.0f, 3.0f); 
+    drones[1] = new Drone(-30.0f, -cubeSize + 30.0f, -25.0f, 4.5f);
+
+    lastTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 }
@@ -484,7 +492,7 @@ void drawStaticObjects() {
 void drawCar() {
     glPushMatrix();
 
-    // oosition and rotation
+    // position and rotation
     glTranslatef(playerCar.posX, playerCar.posY, playerCar.posZ);
     glRotatef(playerCar.rotationY, 0.0f, 1.0f, 0.0f);
 
@@ -672,6 +680,11 @@ void display() {
     drawStreetCircuit();
     drawStaticObjects();
     drawStreetLamps();
+
+    for (int i = 0; i < 2; i++) {
+        drones[i]->draw();
+    }
+
     drawCar();
 
     glutSwapBuffers();
@@ -838,8 +851,19 @@ void updateCar() {
     }
 }
 
+// method that handles continously events
 void idle() {
+    // delta time for smooth animation
+    float currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    float deltaTime = currentTime - lastTime;
+    lastTime = currentTime;
+
     updateCar();
+
+    for (int i = 0; i < 2; i++) {
+        drones[i]->update(deltaTime);
+    }
+
     glutPostRedisplay();
 }
 
@@ -1006,5 +1030,10 @@ int main(int argc, char** argv) {
     glutKeyboardUpFunc(keyboardUp);  
     glutIdleFunc(idle);              
     glutMainLoop();
+
+    for (int i = 0; i < 2; i++) {
+        delete drones[i];
+    }
+
     return 0;
 }
