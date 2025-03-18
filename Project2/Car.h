@@ -30,7 +30,7 @@ public:
     float length = 8.0f;
 
     // Methods
-    void draw();
+    void draw() const;
     void update(bool movingForward, bool movingBackward, 
                 bool turningLeft, bool turningRight, float worldSize);
     bool checkCollision(float worldSize);
@@ -38,7 +38,7 @@ public:
 private:
     bool checkAABBCollision(
         float x1, float y1, float z1, float w1, float h1, float l1,
-        float x2, float y2, float z2, float w2, float h2, float l2);
+        float x2, float y2, float z2, float w2, float h2, float l2) const;
 };
 
 #endif // CAR_H

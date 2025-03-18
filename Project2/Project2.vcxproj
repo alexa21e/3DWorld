@@ -137,12 +137,14 @@
     <ClCompile Include="Drone.cpp" />
     <ClCompile Include="OpenGL_setup.cpp" />
     <ClCompile Include="TextureManager.cpp" />
+    <ClCompile Include="World.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Car.h" />
     <ClInclude Include="Drone.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="TextureManager.h" />
+    <ClInclude Include="World.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="all_lateral.jpeg" />
@@ -154,6 +156,9 @@
     <Image Include="lateral.jpeg" />
     <Image Include="road.jpg" />
     <Image Include="sky.jpeg" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

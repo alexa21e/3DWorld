@@ -6,7 +6,7 @@ Car::Car(float worldSize) {
     posY = -worldSize + 1.0f;
 }
 
-void Car::draw() {
+void Car::draw() const {
     glPushMatrix();
 
     // Position and rotation
@@ -286,7 +286,7 @@ bool Car::checkCollision(float worldSize) {
 bool Car::checkAABBCollision(
     float x1, float y1, float z1, float w1, float h1, float l1,
     float x2, float y2, float z2, float w2, float h2, float l2
-) {
+) const {
     float angle = rotationY * 3.14159f / 180.0f;
     float cosAngle = cos(angle);
     float sinAngle = sin(angle);
